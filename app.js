@@ -569,14 +569,14 @@
         renderTodayDispatches();
     }
 
-    function populateProductSelect(selectId) {
+    function populateProductSelect(selectId, defaultLabel = 'Select a product...', defaultValue = '') {
         const select = document.getElementById(selectId);
         const currentVal = select.value;
         const optionsHtml = PRODUCT_CATALOG.map(p => {
             const s = getStock(p.id);
             return `<option value="${p.id}">${p.name} ${p.volume} (${s.cases}c ${s.pieces}p)</option>`;
         }).join('');
-        select.innerHTML = '<option value="">Select a product...</option>' + optionsHtml;
+        select.innerHTML = `<option value="${defaultValue}">${defaultLabel}</option>` + optionsHtml;
         if (currentVal) select.value = currentVal;
     }
 
@@ -635,7 +635,7 @@
     // RENDER: HISTORY
     // ==========================================
     function renderHistory() {
-        populateProductSelect('history-product-filter');
+        populateProductSelect('history-product-filter', 'All Products', 'all');
         const dateFilter = document.getElementById('history-date-filter').value;
         const productFilter = document.getElementById('history-product-filter').value;
 

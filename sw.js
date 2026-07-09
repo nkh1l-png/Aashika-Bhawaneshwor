@@ -3,7 +3,7 @@
      immediately, with the cached copy used only as an offline fallback.
    - NEVER caches API calls (/api/*) so stock data is always live.
    - Bump CACHE_VERSION whenever app files change to force an update. */
-const CACHE_VERSION = 'stockflow-v2';
+const CACHE_VERSION = 'stockflow-v3';
 const SHELL = [
     '/', '/index.html', '/style.css', '/app.js', '/data.js', '/icon.svg', '/manifest.json'
 ];
