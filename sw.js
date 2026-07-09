@@ -1,8 +1,9 @@
 /* Service worker for StockFlow PWA.
-   - Caches the static app shell for fast/offline loading.
+   - App shell (HTML/CSS/JS) is served NETWORK-FIRST so new deploys show up
+     immediately, with the cached copy used only as an offline fallback.
    - NEVER caches API calls (/api/*) so stock data is always live.
    - Bump CACHE_VERSION whenever app files change to force an update. */
-const CACHE_VERSION = 'stockflow-v1';
+const CACHE_VERSION = 'stockflow-v2';
 const SHELL = [
     '/', '/index.html', '/style.css', '/app.js', '/data.js', '/icon.svg', '/manifest.json'
 ];
@@ -28,17 +29,15 @@ self.addEventListener('fetch', (event) => {
     // API calls: always go to the network (never serve stale data)
     if (url.pathname.startsWith('/api/')) return;
 
-    // Static assets: cache-first, fall back to network and update cache
+    // App shell / static assets: network-first so new deploys are picked up
+    // right away; fall back to the cached copy only when offline.
     event.respondWith(
-        caches.match(req).then(cached => {
-            const network = fetch(req).then(res => {
-                if (res && res.status === 200) {
-                    const copy = res.clone();
-                    caches.open(CACHE_VERSION).then(c => c.put(req, copy));
-                }
-                return res;
-            }).catch(() => cached);
-            return cached || network;
-        })
+        fetch(req).then(res => {
+            if (res && res.status === 200) {
+                const copy = res.clone();
+                caches.open(CACHE_VERSION).then(c => c.put(req, copy));
+            }
+            return res;
+        }).catch(() => caches.match(req))
     );
 });
