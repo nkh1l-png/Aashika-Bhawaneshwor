@@ -750,6 +750,23 @@ const server = http.createServer(async (req, res) => {
                 if (idx < 0) return { error: 'Transaction not found' };
                 const txn = memoryDb.dispatches[idx];
                 if (auth.r !== 'admin' && txn.user !== auth.u) return { error: 'You can only undo your own transactions' };
+
+                // Undoing a "product added" entry removes the product from the catalog.
+                if (txn.type === 'product-added') {
+                    if (auth.r !== 'admin') return { error: 'Only an admin can remove a product' };
+                    if (memoryDb.dispatches.some(d => d.productId === txn.productId && d.id !== txn.id)) {
+                        return { error: 'This product already has stock history — undo those entries first, then remove the product.' };
+                    }
+                    writeCatalogFile(PRODUCT_CATALOG.filter(p => p.id !== txn.productId));
+                    if (memoryDb.stock) delete memoryDb.stock[txn.productId];
+                    memoryDb.dispatches.splice(idx, 1);
+                    delete require.cache[require.resolve('./data.js')];
+                    PRODUCT_CATALOG = require('./data.js');
+                    addAudit(auth, 'product-removed', { targetId: txn.productId, notes: `Removed product ${txn.productId} via History undo` });
+                    await persist();
+                    return { stock: memoryDb.stock };
+                }
+
                 if (auth.r !== 'admin' && txn.type !== 'dispatch') return { error: 'Only admins can undo this transaction type' };
                 applyEffect(txn, -1); // reverse its stock effect
                 memoryDb.dispatches.splice(idx, 1);
@@ -858,6 +875,17 @@ const server = http.createServer(async (req, res) => {
 
                     if (!memoryDb.stock) memoryDb.stock = {};
                     memoryDb.stock[id] = { cases: initialCases, pieces: initialPieces };
+
+                    // Log a History entry so the new product shows up in the timeline.
+                    // Zero quantity + a non-stock type, so it never affects stock or counts.
+                    if (!memoryDb.dispatches) memoryDb.dispatches = [];
+                    memoryDb.dispatches.push({
+                        id: 'txn_' + Date.now() + '_' + crypto.randomBytes(3).toString('hex'),
+                        productId: id, cases: 0, pieces: 0, totalPieces: 0,
+                        notes: 'New product added to catalog',
+                        timestamp: new Date().toISOString(),
+                        type: 'product-added', user: auth.u,
+                    });
 
                     // Hot-reload the catalog from the freshly written file
                     delete require.cache[require.resolve('./data.js')];

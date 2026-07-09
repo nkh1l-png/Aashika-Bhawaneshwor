@@ -287,9 +287,17 @@
         }
     }
 
-    // Undo / delete a transaction (reverses its stock effect on the server).
+    // Undo a transaction (reverses its stock effect), or — for a "product added"
+    // entry — remove the product from the catalog entirely.
     async function undoTransaction(id) {
-        const confirmed = await showConfirm('Undo this transaction?', 'This reverses its effect on stock and removes it from the records. This cannot be undone.');
+        const txn = state.dispatches.find(d => d.id === id);
+        const isProductAdd = txn && txn.type === 'product-added';
+        const confirmed = await showConfirm(
+            isProductAdd ? 'Remove this product?' : 'Undo this transaction?',
+            isProductAdd
+                ? 'This deletes the product from your catalog. It only works if the product has no stock movements yet.'
+                : 'This reverses its effect on stock and removes it from the records. This cannot be undone.'
+        );
         if (!confirmed) return;
         try {
             const res = await apiFetch('/api/transactions', {
@@ -299,6 +307,12 @@
             });
             const data = await res.json();
             if (!data.success) { showToast(data.error || 'Failed to undo', 'error'); return; }
+            if (isProductAdd) {
+                // The client catalog is loaded from data.js; reload to drop the removed product everywhere.
+                showToast('Product removed', 'info');
+                setTimeout(() => window.location.reload(), 900);
+                return;
+            }
             // Re-sync local mirror from server
             await loadStateFromServer();
             showToast('Transaction undone', 'info');
@@ -661,14 +675,18 @@
                 const isLeakage = d.type === 'leakage' || d.type === 'breakage';
                 const isRetailTakeout = d.type === 'retail-takeout';
                 const isRetailReturn = d.type === 'retail-return';
+                const isProductAdded = d.type === 'product-added';
                 const isDeduction = isDispatch || isLeakage || isRetailTakeout;
-                const iconClass = isLeakage ? 'leakage-icon' : (isRetailTakeout ? 'retail-takeout-icon' : (isRetailReturn ? 'retail-return-icon' : (isDispatch ? 'dispatch-icon' : 'restock-icon')));
-                const qtyClass = isLeakage ? 'leakage-text' : (isRetailTakeout ? 'retail-takeout-text' : (isRetailReturn ? 'retail-return-text' : (isDispatch ? 'dispatch-text' : 'restock-text')));
+                const iconClass = isProductAdded ? 'restock-icon' : (isLeakage ? 'leakage-icon' : (isRetailTakeout ? 'retail-takeout-icon' : (isRetailReturn ? 'retail-return-icon' : (isDispatch ? 'dispatch-icon' : 'restock-icon'))));
+                const qtyClass = isProductAdded ? 'restock-text' : (isLeakage ? 'leakage-text' : (isRetailTakeout ? 'retail-takeout-text' : (isRetailReturn ? 'retail-return-text' : (isDispatch ? 'dispatch-text' : 'restock-text'))));
                 const qtyParts = [];
                 if (d.cases > 0) qtyParts.push(`${d.cases} case${d.cases > 1 ? 's' : ''}`);
                 if (d.pieces > 0) qtyParts.push(`${d.pieces} pc${d.pieces > 1 ? 's' : ''}`);
                 const prefix = isDeduction ? '−' : '+';
-                const iconSvg = isLeakage
+                const qtyDisplay = isProductAdded ? 'New product' : `${prefix} ${qtyParts.join(', ')}`;
+                const iconSvg = isProductAdded
+                    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>'
+                    : isLeakage
                     ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>'
                     : (isRetailTakeout || isRetailReturn)
                     ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>'
@@ -678,10 +696,11 @@
 
                 const userTag = d.user ? ` · by ${esc(d.user)}` : '';
 
-                // Show an undo button to admins (any txn) or the user who made it
-                const canUndo = isAdmin() || (currentUser && d.user === currentUser.username);
+                // Undo button: admins can undo any entry (and remove the product for a
+                // product-added entry); staff can undo their own transactions.
+                const canUndo = isProductAdded ? isAdmin() : (isAdmin() || (currentUser && d.user === currentUser.username));
                 const undoBtn = canUndo
-                    ? `<button class="btn-undo-txn" title="Undo this transaction" onclick="window.app.undoTransaction(${jsArg(d.id)})">
+                    ? `<button class="btn-undo-txn" title="${isProductAdded ? 'Remove this product' : 'Undo this transaction'}" onclick="window.app.undoTransaction(${jsArg(d.id)})">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
                        </button>`
                     : '';
@@ -693,7 +712,7 @@
                             <div class="history-entry-title">${p.name} ${p.volume}</div>
                             <div class="history-entry-meta">${formatTime(d.timestamp)}${d.notes ? ' · ' + esc(d.notes) : ''}${userTag}${isLeakage ? ' <span class="leakage-type-tag tag-' + d.type + '">' + d.type + '</span>' : ''}</div>
                         </div>
-                        <span class="history-entry-qty ${qtyClass}">${prefix} ${qtyParts.join(', ')}</span>
+                        <span class="history-entry-qty ${qtyClass}">${qtyDisplay}</span>
                         ${undoBtn}
                     </div>`;
             }).join('');
@@ -1187,7 +1206,7 @@
                         </div>
                         <div class="admin-log-meta">${esc(d.notes) || '—'} · ${formatDate(d.timestamp)}</div>
                     </div>
-                    <span class="admin-log-qty" style="color:${qtyColor}">${prefix}${qtyParts.join(' ')}</span>
+                    <span class="admin-log-qty" style="color:${qtyColor}">${d.type === 'product-added' ? 'New' : prefix + qtyParts.join(' ')}</span>
                     <span class="admin-log-time">${formatTime(d.timestamp)}</span>
                 </div>`;
         }).join('');
