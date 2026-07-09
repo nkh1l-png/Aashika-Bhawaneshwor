@@ -152,7 +152,15 @@
     // DATA HELPERS
     // ==========================================
     function getProduct(id) {
-        return PRODUCT_CATALOG.find(p => p.id === id);
+        return PRODUCT_CATALOG.find(p => p.id === id) || {
+            id,
+            name: 'Deleted Product',
+            volume: `(${id})`,
+            piecesPerCase: 1,
+            image: 'icon.svg',
+            initialStockCases: 0,
+            initialStockPieces: 0
+        };
     }
 
     function getStock(id) {
