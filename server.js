@@ -348,7 +348,14 @@ function processExcelImport(base64Data) {
         };
     });
     
-    const output = `// Auto-generated product catalog from Excel
+    writeCatalogFile(products);
+    return products;
+}
+
+// Serialize the product catalog back to data.js — the shared source of truth
+// consumed by this server (require) and the browser (<script src="data.js">).
+function writeCatalogFile(products) {
+    const output = `// Auto-generated product catalog
 // Generated: ${new Date().toISOString()}
 const PRODUCT_CATALOG = ${JSON.stringify(products, null, 2)};
 
@@ -358,7 +365,6 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 `;
     fs.writeFileSync(path.join(__dirname, 'data.js'), output, 'utf-8');
-    return products;
 }
 
 // ============================================================
@@ -796,6 +802,76 @@ const server = http.createServer(async (req, res) => {
             } catch (e) {
                 console.error('Excel import error:', e);
                 return sendJson(res, 500, { success: false, error: 'Failed to process Excel file: ' + e.message });
+            }
+        }
+
+        // ---------- ADD SINGLE PRODUCT (admin only) ----------
+        if (pathname === '/api/admin/add-product' && req.method === 'POST') {
+            if (auth.r !== 'admin') return sendJson(res, 403, { success: false, error: 'Admin only' });
+            const body = await parseBody(req);
+
+            const name = String(body.name || '').trim();
+            const volume = String(body.volume || '').trim();
+            const piecesPerCase = parseInt(body.piecesPerCase, 10);
+            const initialCases = Math.max(0, parseInt(body.initialCases, 10) || 0);
+            const initialPieces = Math.max(0, parseInt(body.initialPieces, 10) || 0);
+
+            if (!name || !volume) return sendJson(res, 400, { success: false, error: 'Product name and volume are required' });
+            if (!Number.isFinite(piecesPerCase) || piecesPerCase < 1) return sendJson(res, 400, { success: false, error: 'Pieces per case must be a whole number of at least 1' });
+
+            try {
+                const result = await withLock(async () => {
+                    const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const catalog = PRODUCT_CATALOG.slice();
+
+                    // Reject duplicates (same name + volume)
+                    if (catalog.some(p => norm(p.name) === norm(name) && norm(p.volume) === norm(volume))) {
+                        return { error: 'A product with that name and volume already exists' };
+                    }
+
+                    // New id = highest existing prod_N + 1, so existing ids/stock stay stable
+                    let maxNum = 0;
+                    catalog.forEach(p => { const m = /^prod_(\d+)$/.exec(p.id || ''); if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10)); });
+                    const id = `prod_${maxNum + 1}`;
+
+                    // Image: use the uploaded file, else auto-match a file already on disk by name
+                    let imageFile = '';
+                    if (body.image) {
+                        const ext = (path.extname(String(body.imageName || '')) || '.png').toLowerCase();
+                        if (['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) {
+                            imageFile = `${name} ${volume}${ext}`;
+                            const raw = String(body.image);
+                            const b64 = raw.includes(',') ? raw.split(',')[1] : raw;
+                            fs.writeFileSync(path.join(__dirname, imageFile), Buffer.from(b64, 'base64'));
+                        }
+                    } else {
+                        const target = norm(`${name} ${volume}`);
+                        const match = fs.readdirSync(__dirname)
+                            .filter(f => /\.(png|jpg|jpeg|webp)$/i.test(f))
+                            .find(f => norm(path.basename(f, path.extname(f))) === target);
+                        if (match) imageFile = match;
+                    }
+
+                    const product = { id, name, volume, piecesPerCase, image: imageFile, initialStockCases: initialCases, initialStockPieces: initialPieces };
+                    catalog.push(product);
+                    writeCatalogFile(catalog);
+
+                    if (!memoryDb.stock) memoryDb.stock = {};
+                    memoryDb.stock[id] = { cases: initialCases, pieces: initialPieces };
+
+                    // Hot-reload the catalog from the freshly written file
+                    delete require.cache[require.resolve('./data.js')];
+                    PRODUCT_CATALOG = require('./data.js');
+
+                    addAudit(auth, 'product-added', { notes: `Added product ${name} ${volume} (${id})` });
+                    await persist();
+                    return { product };
+                });
+                if (result.error) return sendJson(res, 400, { success: false, error: result.error });
+                return sendJson(res, 200, { success: true, product: result.product });
+            } catch (e) {
+                console.error('Add product error:', e);
+                return sendJson(res, 500, { success: false, error: 'Failed to add product: ' + e.message });
             }
         }
 

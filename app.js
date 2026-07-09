@@ -2036,6 +2036,52 @@
             reader.readAsDataURL(file);
         });
 
+        // Add a single product manually (type it in, no Excel needed)
+        const addProductBtn = document.getElementById('admin-btn-add-product');
+        if (addProductBtn) {
+            addProductBtn.addEventListener('click', async () => {
+                const name = document.getElementById('add-prod-name').value.trim();
+                const volume = document.getElementById('add-prod-volume').value.trim();
+                const piecesPerCase = parseInt(document.getElementById('add-prod-ppc').value, 10);
+                const initialCases = parseInt(document.getElementById('add-prod-cases').value, 10) || 0;
+                const initialPieces = parseInt(document.getElementById('add-prod-pieces').value, 10) || 0;
+                const imageInput = document.getElementById('add-prod-image');
+
+                if (!name || !volume) { showToast('Please enter a product name and volume', 'warning'); return; }
+                if (!piecesPerCase || piecesPerCase < 1) { showToast('Please enter a valid pieces-per-case (at least 1)', 'warning'); return; }
+
+                const payload = { name, volume, piecesPerCase, initialCases, initialPieces };
+
+                const send = async () => {
+                    const originalHtml = addProductBtn.innerHTML;
+                    addProductBtn.disabled = true;
+                    addProductBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;margin-right:6px;display:inline-block;vertical-align:middle;animation:spin 1s linear infinite"><circle cx="12" cy="12" r="10"/></svg> Adding...';
+                    try {
+                        const res = await apiFetch('/api/admin/add-product', { method: 'POST', body: JSON.stringify(payload) });
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.error || 'Failed to add product');
+                        showToast('Product added successfully! Reloading...', 'success');
+                        setTimeout(() => window.location.reload(), 1200);
+                    } catch (err) {
+                        showToast(err.message, 'error');
+                        addProductBtn.disabled = false;
+                        addProductBtn.innerHTML = originalHtml;
+                    }
+                };
+
+                if (imageInput.files && imageInput.files.length > 0) {
+                    const file = imageInput.files[0];
+                    if (file.size > 3 * 1024 * 1024) { showToast('Image is too large (max 3MB). Use a smaller file or add it later.', 'warning'); return; }
+                    const reader = new FileReader();
+                    reader.onload = (e) => { payload.image = e.target.result; payload.imageName = file.name; send(); };
+                    reader.onerror = () => showToast('Failed to read image file', 'error');
+                    reader.readAsDataURL(file);
+                } else {
+                    send();
+                }
+            });
+        }
+
         // Sidebar Report modal triggers
         const btnSidebarReports = document.getElementById('btn-sidebar-reports');
         if (btnSidebarReports) {
