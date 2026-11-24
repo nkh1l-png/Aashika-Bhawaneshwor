@@ -34,7 +34,7 @@ One more warning: importing a catalog from Excel regenerates the whole catalog a
 
 If it isn't already:
 ```bash
-cd "path/to/Aashika-Bhaweheshwor"
+cd "path/to/Aashika-Bhawaneshwor"
 git add .
 git commit -m "Harden + add Mongo/Excel for deploy"
 git push

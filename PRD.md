@@ -1,5 +1,5 @@
 # Product Requirements Document (PRD)
-## Aashika-Bhaweneshwor Stock Manager ("StockFlow")
+## Aashika-Bhawaneshwor Stock Manager ("StockFlow")
 
 **Document version:** 1.1
 **Date:** 2026-06-24 (updated 2026-11-24 — editable product catalog v1)
@@ -10,7 +10,7 @@
 ## 1. Overview
 
 ### 1.1 What it is
-**StockFlow** is a web-based warehouse stock-management and dispatch-tracking system built for **Aashika-Bhaweneshwor**, a beverage distribution business (beer, whisky, energy drinks, soft drinks, etc.). It runs as a small self-hosted web application that staff and administrators open in a browser.
+**StockFlow** is a web-based warehouse stock-management and dispatch-tracking system built for **Aashika-Bhawaneshwor**, a beverage distribution business (beer, whisky, energy drinks, soft drinks, etc.). It runs as a small self-hosted web application that staff and administrators open in a browser.
 
 ### 1.2 The problem it solves
 A beverage distributor constantly moves cases and loose pieces of stock in and out of a warehouse:
@@ -34,7 +34,7 @@ Doing this in a paper register or spreadsheet is error-prone, hard to audit, and
 | Role | Who | What they can do |
 |------|-----|------------------|
 | **Admin** | Owner / manager (e.g. `admin`) | Everything Staff can do **plus** the Admin Panel: manage users (add/remove/change password), view all-user activity log, export all data, reset all data. |
-| **Staff** | Warehouse / sales employees (e.g. Aashika, Bhaweheshwor, Nishan) | Log in; view dashboard & inventory; record dispatch, restock, retailing (take out / return), and leakage/breakage; view history; export data. **Cannot** see the Admin Panel. |
+| **Staff** | Warehouse / sales employees (e.g. Aashika, Bhawaneshwor, Nishan) | Log in; view dashboard & inventory; record dispatch, restock, retailing (take out / return), and leakage/breakage; view history; export data. **Cannot** see the Admin Panel. |
 
 Seeded default accounts (defined in `server.js`):
 
@@ -42,7 +42,7 @@ Seeded default accounts (defined in `server.js`):
 |----------|----------|------|
 | admin | admin123 | Admin |
 | aashika | aashika123 | Staff |
-| bhaweheshwor | bhaweheshwor123 | Staff |
+| bhawaneshwor | bhawaneshwor123 | Staff |
 | nishan | nishan123 | Staff |
 
 > ⚠️ These are default credentials and should be changed before real use.
@@ -93,7 +93,7 @@ StockFlow is a **vanilla-stack, server-rendered-free single-page app** with a th
 
 ### 3.3 File structure
 ```
-Aashika-Bhaweheshwor/
+Aashika-Bhawaneshwor/
 ├── server.js          # Node HTTP server: static serving + API + db.json I/O
 ├── app.js             # All client logic: state, auth, rendering, events
 ├── data.js            # PRODUCT_CATALOG (generated from Excel)

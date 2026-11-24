@@ -1,5 +1,5 @@
 /* ============================================
-   AASHIKA-BHAWENESHWOR STOCK MANAGER
+   AASHIKA-BHAWANESHWOR STOCK MANAGER
    Application Logic
    ============================================ */
 

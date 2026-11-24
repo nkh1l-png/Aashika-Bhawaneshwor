@@ -44,7 +44,7 @@ const MIME_TYPES = {
 const DEFAULT_USERS = [
     { username: 'admin', password: 'admin123', role: 'admin', displayName: 'Admin' },
     { username: 'aashika', password: 'aashika123', role: 'staff', displayName: 'Aashika' },
-    { username: 'bhaweheshwor', password: 'bhaweheshwor123', role: 'staff', displayName: 'Bhaweheshwor' },
+    { username: 'bhawaneshwor', password: 'bhawaneshwor123', role: 'staff', displayName: 'Bhawaneshwor' },
     { username: 'nishan', password: 'nishan123', role: 'staff', displayName: 'Nishan' },
 ];
 
@@ -127,7 +127,7 @@ async function connectMongo() {
         serverSelectionTimeoutMS: 5000,
         connectTimeoutMS: 5000,
         socketTimeoutMS: 45000,
-        appName: 'aashika-bhaweheshwor-stock-manager',
+        appName: 'aashika-bhawaneshwor-stock-manager',
     });
 
     const maxAttempts = 3;
@@ -530,7 +530,7 @@ function buildPeriodicReport(type, dateVal, monthVal) {
     }).slice().sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
     const summaryRows = [];
-    summaryRows.push(["AASHIKA BHAWEHESHWOR STOCK MANAGER", "", "", ""]);
+    summaryRows.push(["AASHIKA BHAWANESHWOR STOCK MANAGER", "", "", ""]);
     summaryRows.push([`${type.toUpperCase()} TRANSACTION REPORT`, "", "", ""]);
     summaryRows.push([`Period: ${periodStr}`, "", "", ""]);
     summaryRows.push(["", "", "", ""]);
@@ -1193,7 +1193,7 @@ const server = http.createServer(async (req, res) => {
 
 bootstrap().then(() => {
     server.listen(PORT, () => {
-        console.log(`\n  Aashika-Bhaweneshwor Stock Manager`);
+        console.log(`\n  Aashika-Bhawaneshwor Stock Manager`);
         console.log(`  ----------------------------------`);
         console.log(`  Storage: ${USE_MONGO ? 'MongoDB Atlas' : 'db.json (local file)'}`);
         console.log(`  Server running at: http://localhost:${PORT}\n`);
