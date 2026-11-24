@@ -737,6 +737,52 @@ input, select, textarea { font-family: inherit; }
     box-shadow: 0 0 12px var(--accent-success-glow);
 }
 
+.btn-table-edit {
+    background: rgba(59, 130, 246, 0.12);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.2);
+}
+.btn-table-edit:hover {
+    background: rgba(59, 130, 246, 0.25);
+    box-shadow: 0 0 12px rgba(59, 130, 246, 0.25);
+}
+
+.btn-table-delete {
+    background: rgba(239, 68, 68, 0.12);
+    color: var(--accent-danger);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+.btn-table-delete:hover {
+    background: rgba(239, 68, 68, 0.25);
+    box-shadow: 0 0 12px var(--accent-danger-glow);
+}
+
+/* ---------- PRODUCT FORM (Add / Edit modal) ---------- */
+.pf-photo-row {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    margin-bottom: 16px;
+}
+
+.pf-photo-preview {
+    width: 120px;
+    height: 120px;
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.03);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.pf-photo-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
 /* ---------- DISPATCH LAYOUT ---------- */
 .dispatch-layout {
     display: grid;

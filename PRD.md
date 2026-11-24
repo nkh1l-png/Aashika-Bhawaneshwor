@@ -1,8 +1,8 @@
 # Product Requirements Document (PRD)
 ## Aashika-Bhaweneshwor Stock Manager ("StockFlow")
 
-**Document version:** 1.0
-**Date:** 2026-06-24
+**Document version:** 1.1
+**Date:** 2026-06-24 (updated 2026-11-24 — editable product catalog v1)
 **Status:** Reflects the current implemented build (as-built PRD)
 
 ---
@@ -85,7 +85,7 @@ StockFlow is a **vanilla-stack, server-rendered-free single-page app** with a th
 | Frontend markup | **HTML5** (`index.html`) | Single page; all views are `<section>`s toggled via CSS classes. |
 | Styling | **Plain CSS** (`style.css`) | Custom dark "glassmorphism" theme using CSS variables; responsive with a mobile sidebar/hamburger. |
 | Frontend logic | **Vanilla JavaScript (ES6+)** (`app.js`) | One IIFE module; no framework, no bundler. ~1900 lines. |
-| Product data | **Static JS array** (`data.js`) | `PRODUCT_CATALOG`, auto-generated from an Excel sheet. |
+| Product data | **Static JS array** (`data.js`) | `PRODUCT_CATALOG`, auto-generated from an Excel sheet. In v1 (2026-11-24) products can also be added, edited and deleted in the app by an admin — see §4.1 and §5.3. `data.js` remains the catalog store in v1; it is not yet in the database. |
 | Backend | **Node.js core `http` module** (`server.js`) | No Express/framework — raw HTTP server. |
 | Persistence | **Single JSON file** (`db.json`) | Holds users + full app state. Created automatically on first run. |
 | Data generation | **`xlsx` npm package** (`generate_data.js`) | Dev-time script to regenerate `data.js` from the stock Excel file. The **only** npm dependency. |
@@ -102,7 +102,8 @@ Aashika-Bhaweheshwor/
 ├── style.css          # Theme & layout
 ├── package.json       # Metadata + xlsx dependency
 ├── db.json            # Runtime database (gitignored, auto-created)
-├── *.png / *.jpg      # Product images (one per product)
+├── images/            # Uploaded product photos, server-generated filenames (v1, 2026-11-24)
+├── *.png / *.jpg      # Product images (one per product, originals in the repo root)
 └── Aashika_..._Stock Book.xlsx  # Source spreadsheet for the catalog
 ```
 
@@ -117,7 +118,7 @@ Aashika-Bhaweheshwor/
 
 ## 4. Data Models
 
-### 4.1 Product (static, from `data.js`)
+### 4.1 Product (from `data.js`, editable in the app since v1, 2026-11-24)
 ```js
 {
   id: "prod_1",
@@ -129,7 +130,14 @@ Aashika-Bhaweheshwor/
   initialStockPieces: 13
 }
 ```
-The catalog is fixed in `data.js`. Products are **not** editable through the UI — they are regenerated from the Excel file via `generate_data.js`.
+The catalog still lives in `data.js` (it is not yet in the database — that move is Phase 2, see §9). Products **are now editable through the UI**, admin only:
+- **Add** a product: name, volume, pieces per case, initial stock, and an optional photo.
+- **Edit** a product: name, volume, pieces per case, and photo (Keep current / Change / Remove). The product `id` is never edited — it is the link used by every transaction for that product.
+- **Delete** a product: admin only, and only when its stock is 0 (see §8, item 10).
+- **Initial stock is read-only after creation.** `initialStockCases` / `initialStockPieces` are set when a product is added and never edited afterwards. Stock changes only through restock / dispatch / retailing, never by editing the product — that keeps the ledger honest.
+- **Photo:** when a photo is uploaded, the server gives it a server-generated filename in `images/` (png/jpg/jpeg/webp only, 3 MB server-side cap, file contents checked, not just the extension). The old file is deleted only after the new one is saved, and only if no other product uses it — several products share one image file today. If no photo is set, the product shows the plain icon.
+- A product with the same name + volume as another product cannot be added or edited in (duplicate → 409). Name/volume lengths are capped and `<`, `>` and quotes are rejected.
+- The catalog is still regenerated from the Excel file by `generate_data.js` / the Excel import — see the warning in §8, item 13: importing can overwrite manual add/edit/delete work.
 
 ### 4.2 Stock (per product, in `state.stock`)
 ```js
@@ -191,11 +199,15 @@ Every movement — of any type — is stored in one array as an append-only ledg
 - **Stat cards:** Total Products, Total Cases, Today's Dispatches, Low-Stock Alerts, Leakage/Breakage today (animated counters).
 - **Product overview grid:** every product as a card with image, current stock, and a colored status badge (In Stock / Low Stock / Out of Stock).
 - Filters by **brand** and **status**; global search box (searches name + volume).
-- Clicking a card opens a **product detail modal** with stock breakdown, quick Dispatch/Restock buttons, and that product's last 5 transactions.
+- Clicking a card opens a **product detail modal** with stock breakdown, quick Dispatch/Restock buttons, and that product's last 5 transactions. For an admin, the modal also has an **Edit** button (see §5.3). Staff see no Edit button.
 
 ### 5.3 Inventory
 - Full table: product, volume, pieces/case, cases, loose pieces, total pieces, status, and quick **Dispatch / Restock** action buttons per row.
 - Sortable (name A–Z/Z–A, stock low→high/high→low) and brand-filterable.
+- **Edit / Delete products (admin only, since v1, 2026-11-24):** each Inventory row has **Edit** and **Delete** buttons, visible only to an admin. Staff see no Edit/Delete buttons at all.
+- **One shared Add/Edit form:** Add opens the same form blank; Edit opens it pre-filled with that product's current name, volume, pieces per case and photo. Only 4 fields: product name, size (free text, e.g. `650ml`), pieces in 1 case, and photo — a big preview, default **Keep current photo**, with **Change photo** (pick from camera/gallery) and **Remove photo** (falls back to the plain icon). Starting stock appears on Add only; it is not shown on Edit (see §4.1).
+- **Saving:** the form checks name + size are filled and that no *other* product already has that name + size. On save the app shows a toast ("Product saved") and reloads the page, so every dropdown (Dispatch / Restock / Retailing / Leakage) shows the new name and no deleted product.
+- **Deleting:** two taps, never one. The confirmation states the facts in plain words — the product name, its stock, and how many past records it has — and says past records will stay but will show as "Deleted Product", and that this cannot be undone. Delete is refused by the server when stock is above 0 ("clear the stock first — dispatch it or move it"). See §8, item 10.
 
 ### 5.4 Dispatch
 - Form: choose product → live stock preview → enter cases/pieces + optional note → submit.
@@ -247,9 +259,20 @@ Every movement — of any type — is stored in one array as an append-only ledg
 | POST | `/api/users/change-password` | Change a user's password (min 4 chars) | ❌ No |
 | GET | `/api/state` | Get stock + transactions (users stripped out) | ❌ No |
 | POST | `/api/state` | Overwrite stock + transactions (users preserved) | ❌ No |
+| POST | `/api/admin/add-product` | Add a product (admin only) | ✅ Admin only, server-enforced |
+| POST | `/api/admin/edit-product` | Edit a product's name, volume, pieces per case and/or photo (admin only) | ✅ Admin only, server-enforced |
+| POST | `/api/admin/delete-product` | Delete a product (admin only; refused when stock > 0) | ✅ Admin only, server-enforced |
 | (any) | `/*` | Serve static files (html/css/js/images) | n/a |
 
 > ⚠️ **Important:** role checks exist only in the browser. The server does **not** verify identity or role on any endpoint. See §8.
+
+> **Note on the table above (2026-11-24):** the three catalog endpoints (`add-product`, `edit-product`, `delete-product`) are the exception — they **are** admin-only on the server (a staff token gets 403), run inside the server lock (`withLock`), and are written to the audit log with before → after values. The older rows in this table have not been re-audited as part of this change and are left as they were.
+
+**Catalog endpoints (v1, 2026-11-24):**
+- `POST /api/admin/edit-product` — admin only. Fields: product id, name, volume, `piecesPerCase`, optional photo (base64; omitting it keeps the current photo). Duplicate name + volume (excluding the product itself) → 409. Changing `piecesPerCase` while the product has stock → refused (see §8, item 11). Returns the updated product.
+- `POST /api/admin/delete-product` — admin only. Deletes the product from the catalog and removes its stock entry; the transaction history is left untouched, so old rows render as "Deleted Product". Refused when stock is above 0, with the stock and transaction counts in the error. Audited as `product-removed`.
+- `POST /api/admin/add-product` — admin only, as before, but now uses the same image handling as edit: server-generated filename in `images/`, magic-byte + size checks (png/jpg/jpeg/webp, 3 MB server-side cap), never a user-supplied filename. The old image path (extension-only check, filename from name + volume, saved in the repo root) is no longer used.
+- All three endpoints back up `data.js` (timestamped copy, last 10 kept) and write it atomically (temporary file + rename) inside the server lock, so a crash mid-write cannot corrupt the whole catalog.
 
 ---
 
@@ -277,11 +300,25 @@ These are documented honestly so future work can address them. (See the separate
 7. **No edit/undo of a transaction** — only full reset, which erases everything.
 8. **No backups** — single file; corruption or accidental reset loses all data.
 9. **Low-stock logic** uses only `cases < 3`, ignoring loose pieces.
+10. **Delete rule (catalog v1, 2026-11-24)** — a product can only be deleted when its stock is 0. If stock is above 0 the server refuses the delete. Deleting is a real (hard) delete: the product disappears from the Dashboard, Inventory and every product dropdown. Its past transactions are **not** deleted — they stay in History and render as "Deleted Product" (the name is lost in old rows, the quantities are not: each transaction stores its own cases / pieces / total pieces). There is no undo-delete and no archive/restore in v1 (Phase 2, see §9).
+11. **Pieces-per-case rule (catalog v1, 2026-11-24)** — `piecesPerCase` cannot be changed while the product has stock. Changing it with stock on hand would silently change what the stored cases mean in total pieces. Clear the stock first, then change it. Renormalising stock from total pieces instead of blocking is a Phase 2 idea, not v1.
+12. **Catalog / photo edits do not survive a free Render redeploy (catalog v1, 2026-11-24)** — catalog edits live in `data.js` and uploaded photos live in `images/`, both on the server disk. On free Render the disk is wiped on redeploy/restart, so those edits are lost unless they are committed to GitHub afterwards. Data in MongoDB Atlas (stock, transactions, users) survives; the catalog and photos do not yet. Moving the catalog into the database is Phase 2 (see §9 and DEPLOY.md, "Catalog edits and Render").
+13. **Excel import can overwrite manual catalog work (catalog v1, 2026-11-24)** — `/api/admin/import-catalog` regenerates the whole catalog from the Excel file (`prod_1…N`, in sheet order) and rewrites `data.js`. Products added, edited or deleted by hand in the app can be lost by an import. The admin is warned and asked to confirm before an import runs. Rewiring the import to merge (upsert, never delete) is Phase 2, not v1.
 
 ---
 
 ## 9. Future Enhancements (Roadmap ideas)
 
+### Done in v1 (2026-11-24)
+- **Editable product catalog from the UI** — admin can add, edit (name, volume, pieces per case, photo) and delete (stock must be 0) products in the app, instead of only regenerating from Excel. See §4.1, §5.3 and §6.
+
+### Phase 2 — catalog follow-ons (not done in v1)
+- **DB-backed catalog** — move the catalog into the database (`db.products`, seeded once from `data.js`), so catalog edits survive a Render redeploy like stock data does. `data.js` becomes a frozen seed only.
+- **Archive / restore** — hide a product from all lists without deleting it, with a restore option, so its name still shows in old history rows.
+- **Pieces-per-case renormalisation** — allow changing pieces per case with stock on hand by recomputing cases/loose pieces from total pieces, with a warning and audit entry, instead of blocking.
+- **Excel import as upsert** — importing a catalog merges by name + volume (update / add, never delete) and shows a change summary for the admin to confirm first, instead of regenerating the whole catalog.
+
+### Other future ideas
 - Real server-side auth with session tokens + hashed passwords + HTTPS.
 - Append-only transaction API (per-transaction endpoints) to fix concurrency.
 - Edit/correct/undo individual transactions.
@@ -289,7 +326,6 @@ These are documented honestly so future work can address them. (See the separate
 - Pricing per product → revenue/sales reporting; monthly summaries.
 - Export to Excel/PDF for accounting.
 - Low-stock reorder report (single screen of everything to restock).
-- Editable product catalog from the UI (instead of regenerating from Excel).
 - "Remember me" persistent login; per-user self-service password change.
 
 ---

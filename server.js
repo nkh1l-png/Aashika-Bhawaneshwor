@@ -28,6 +28,10 @@ const MONGODB_DB = process.env.MONGODB_DB || 'stockflow';
 let USE_MONGO = !!MONGODB_URI;
 const TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7;          // 7 days
 
+// Product images uploaded by admins live here (server-generated names only).
+const IMAGE_DIR = path.join(__dirname, 'images');
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024; // 3 MB
+
 const MIME_TYPES = {
     '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
     '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
@@ -364,7 +368,106 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = PRODUCT_CATALOG;
 }
 `;
-    fs.writeFileSync(path.join(__dirname, 'data.js'), output, 'utf-8');
+    backupCatalog();
+    const tmpPath = path.join(__dirname, 'data.js.tmp');
+    fs.writeFileSync(tmpPath, output, 'utf-8');
+    fs.renameSync(tmpPath, path.join(__dirname, 'data.js'));
+}
+
+// ============================================================
+// CATALOG HARDENING + PRODUCT IMAGE HELPERS (editable catalog)
+// ============================================================
+
+// Back up the current data.js before any catalog rewrite.
+// Keeps the latest 10 backups in backups/, deletes older ones.
+// (Same pattern as backupDatabase() above.)
+function backupCatalog() {
+    try {
+        const dataPath = path.join(__dirname, 'data.js');
+        if (!fs.existsSync(dataPath)) return;
+        const backupDir = path.join(__dirname, 'backups');
+        if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir);
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        fs.copyFileSync(dataPath, path.join(backupDir, `catalog_backup_${stamp}.js`));
+        const files = fs.readdirSync(backupDir)
+            .filter(f => f.startsWith('catalog_backup_') && f.endsWith('.js'))
+            .map(f => ({ name: f, time: fs.statSync(path.join(backupDir, f)).mtime.getTime() }))
+            .sort((a, b) => b.time - a.time);
+        if (files.length > 10) {
+            for (let i = 10; i < files.length; i++) {
+                try { fs.unlinkSync(path.join(backupDir, files[i].name)); } catch (e) { /* already gone */ }
+            }
+        }
+    } catch (e) {
+        console.error('Failed to create catalog backup:', e.message);
+    }
+}
+
+// Hot-reload the catalog from the freshly written data.js (same as add-product).
+function reloadCatalog() {
+    delete require.cache[require.resolve('./data.js')];
+    PRODUCT_CATALOG = require('./data.js');
+}
+
+// Shared validation for add/edit. Returns an error string, or null when valid.
+// Rejects <, > and control characters (names are rendered into HTML in places).
+function validateProductFields(name, volume, piecesPerCase) {
+    if (!name || !volume) return 'Product name and volume are required';
+    if (name.length > 80) return 'Product name must be 80 characters or fewer';
+    if (volume.length > 20) return 'Volume must be 20 characters or fewer';
+    if (/[<>\x00-\x1F\x7F]/.test(name) || /[<>\x00-\x1F\x7F]/.test(volume)) {
+        return 'Product name and volume cannot contain <, > or control characters';
+    }
+    if (!Number.isFinite(piecesPerCase) || !Number.isInteger(piecesPerCase) || piecesPerCase < 1) {
+        return 'Pieces per case must be a whole number of at least 1';
+    }
+    return null;
+}
+
+// Sniff the real file type from magic bytes — never trust the client extension.
+// Returns '.png' | '.jpg' | '.webp', or null for anything else (incl. SVG/HTML).
+function detectImageType(buf) {
+    if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47 &&
+        buf[4] === 0x0D && buf[5] === 0x0A && buf[6] === 0x1A && buf[7] === 0x0A) return '.png';
+    if (buf.length >= 3 && buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return '.jpg';
+    if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return '.webp';
+    return null;
+}
+
+// Validate + save an uploaded product image. `imageB64` is base64, with or
+// without a data-URL prefix. Returns the stored path, e.g. "images/prod_12_ab12cd34.png".
+// Throws an Error with a plain-language message on any rejection.
+// NEVER uses a user-supplied filename, never writes to the repo root,
+// never allows path traversal — the filename is always server-generated.
+function saveProductImage(productId, imageB64) {
+    const raw = String(imageB64 || '');
+    const b64 = raw.includes(',') ? raw.split(',')[1] : raw;
+    const buf = Buffer.from(b64, 'base64');
+    if (!buf.length) throw new Error('Image file is empty');
+    if (buf.length > MAX_IMAGE_BYTES) throw new Error('Image must be 3 MB or smaller');
+    const ext = detectImageType(buf);
+    if (!ext) throw new Error('Image must be a PNG, JPG or WEBP photo');
+    if (!fs.existsSync(IMAGE_DIR)) fs.mkdirSync(IMAGE_DIR, { recursive: true });
+    const filename = `prod_${productId}_${crypto.randomBytes(4).toString('hex')}${ext}`;
+    fs.writeFileSync(path.join(IMAGE_DIR, filename), buf);
+    return `images/${filename}`;
+}
+
+// Delete an image file, but ONLY if no product in `products` (the catalog
+// AFTER the change) still references it — many products share one image file.
+// Only server-generated images/ files are ever deleted; legacy repo-root
+// image files are tracked repo assets and are always left in place.
+function deleteImageIfUnreferenced(imageValue, products) {
+    if (!imageValue) return;
+    if (!String(imageValue).startsWith('images/')) return;
+    if (products.some(p => p.image === imageValue)) return;
+    const filePath = path.join(IMAGE_DIR, path.basename(imageValue));
+    if (!filePath.startsWith(IMAGE_DIR)) return;
+    try {
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } catch (e) {
+        console.error('Failed to delete old product image:', e.message);
+    }
 }
 
 // ============================================================
@@ -835,6 +938,8 @@ const server = http.createServer(async (req, res) => {
 
             if (!name || !volume) return sendJson(res, 400, { success: false, error: 'Product name and volume are required' });
             if (!Number.isFinite(piecesPerCase) || piecesPerCase < 1) return sendJson(res, 400, { success: false, error: 'Pieces per case must be a whole number of at least 1' });
+            const fieldError = validateProductFields(name, volume, piecesPerCase);
+            if (fieldError) return sendJson(res, 400, { success: false, error: fieldError });
 
             try {
                 const result = await withLock(async () => {
@@ -851,21 +956,25 @@ const server = http.createServer(async (req, res) => {
                     catalog.forEach(p => { const m = /^prod_(\d+)$/.exec(p.id || ''); if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10)); });
                     const id = `prod_${maxNum + 1}`;
 
-                    // Image: use the uploaded file, else auto-match a file already on disk by name
+                    // Image: validate + save via the shared helper (server-generated
+                    // name in images/), else auto-match a file already on disk by name.
                     let imageFile = '';
                     if (body.image) {
-                        const ext = (path.extname(String(body.imageName || '')) || '.png').toLowerCase();
-                        if (['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) {
-                            imageFile = `${name} ${volume}${ext}`;
-                            const raw = String(body.image);
-                            const b64 = raw.includes(',') ? raw.split(',')[1] : raw;
-                            fs.writeFileSync(path.join(__dirname, imageFile), Buffer.from(b64, 'base64'));
+                        try {
+                            imageFile = saveProductImage(id, body.image);
+                        } catch (e) {
+                            return { error: e.message };
                         }
                     } else {
                         const target = norm(`${name} ${volume}`);
-                        const match = fs.readdirSync(__dirname)
-                            .filter(f => /\.(png|jpg|jpeg|webp)$/i.test(f))
-                            .find(f => norm(path.basename(f, path.extname(f))) === target);
+                        const candidates = fs.readdirSync(__dirname)
+                            .filter(f => /\.(png|jpg|jpeg|webp)$/i.test(f));
+                        if (fs.existsSync(IMAGE_DIR)) {
+                            fs.readdirSync(IMAGE_DIR)
+                                .filter(f => /\.(png|jpg|jpeg|webp)$/i.test(f))
+                                .forEach(f => candidates.push(`images/${f}`));
+                        }
+                        const match = candidates.find(f => norm(path.basename(f, path.extname(f))) === target);
                         if (match) imageFile = match;
                     }
 
@@ -900,6 +1009,129 @@ const server = http.createServer(async (req, res) => {
             } catch (e) {
                 console.error('Add product error:', e);
                 return sendJson(res, 500, { success: false, error: 'Failed to add product: ' + e.message });
+            }
+        }
+
+        // ---------- EDIT SINGLE PRODUCT (admin only) ----------
+        // JSON { id, name, volume, piecesPerCase, image?, imageName?, removeImage? }
+        // image absent = keep current; removeImage=true = clear it; image present
+        // = replace it (validated + saved via saveProductImage).
+        // initialStockCases/Pieces are NEVER edited here — stock changes only
+        // via restock/dispatch.
+        if (pathname === '/api/admin/edit-product' && req.method === 'POST') {
+            if (auth.r !== 'admin') return sendJson(res, 403, { success: false, error: 'Admin only' });
+            const body = await parseBody(req);
+
+            const id = String(body.id || '').trim();
+            if (!id) return sendJson(res, 400, { success: false, error: 'Product id is required' });
+            const name = String(body.name || '').trim();
+            const volume = String(body.volume || '').trim();
+            const piecesPerCase = parseInt(body.piecesPerCase, 10);
+            const fieldError = validateProductFields(name, volume, piecesPerCase);
+            if (fieldError) return sendJson(res, 400, { success: false, error: fieldError });
+
+            try {
+                const result = await withLock(async () => {
+                    const idx = PRODUCT_CATALOG.findIndex(p => p.id === id);
+                    if (idx < 0) return { error: 'Product not found', code: 404 };
+                    const existing = PRODUCT_CATALOG[idx];
+                    const before = { ...existing };
+                    const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+
+                    // Reject duplicates (same name + volume), excluding this product
+                    if (PRODUCT_CATALOG.some(p => p.id !== id && norm(p.name) === norm(name) && norm(p.volume) === norm(volume))) {
+                        return { error: 'A product with that name and volume already exists', code: 409 };
+                    }
+
+                    // Pieces-per-case gate: changing it while stock is left would
+                    // silently change how much stock the shop thinks it has.
+                    if (piecesPerCase !== existing.piecesPerCase) {
+                        const stock = memoryDb.stock[id] || { cases: 0, pieces: 0 };
+                        const total = stock.cases * existing.piecesPerCase + stock.pieces;
+                        if (total > 0) {
+                            return { error: 'Pieces per case can\'t be changed while stock is left — clear the stock first', code: 400 };
+                        }
+                    }
+
+                    // Image: new upload wins over removeImage if both are sent.
+                    const oldImage = existing.image || '';
+                    let imageFile = oldImage;
+                    if (body.image) {
+                        try {
+                            imageFile = saveProductImage(id, body.image);
+                        } catch (e) {
+                            return { error: e.message, code: 400 };
+                        }
+                    } else if (body.removeImage === true || body.removeImage === 'true') {
+                        imageFile = '';
+                    }
+
+                    const updated = { ...existing, name, volume, piecesPerCase, image: imageFile };
+                    const catalog = PRODUCT_CATALOG.slice();
+                    catalog[idx] = updated;
+                    writeCatalogFile(catalog);
+
+                    // Delete the old image only after the new write succeeded,
+                    // and only if no other product still references it.
+                    if (imageFile !== oldImage) deleteImageIfUnreferenced(oldImage, catalog);
+
+                    reloadCatalog();
+                    const saved = getProduct(id) || updated;
+                    addAudit(auth, 'product-edited', {
+                        targetId: id,
+                        notes: `Edited product ${before.name} ${before.volume} -> ${name} ${volume}`,
+                        before: { name: before.name, volume: before.volume, piecesPerCase: before.piecesPerCase, image: before.image },
+                        after: { name, volume, piecesPerCase, image: imageFile },
+                    });
+                    await persist();
+                    return { product: saved };
+                });
+                if (result.error) return sendJson(res, result.code || 400, { success: false, error: result.error });
+                return sendJson(res, 200, { success: true, product: result.product });
+            } catch (e) {
+                console.error('Edit product error:', e);
+                return sendJson(res, 500, { success: false, error: 'Failed to edit product: ' + e.message });
+            }
+        }
+
+        // ---------- DELETE SINGLE PRODUCT (admin only) ----------
+        // JSON { id }. Hard delete, gated on stock = 0 only. Past transactions
+        // are KEPT untouched, so history keeps showing them as "Deleted Product".
+        if (pathname === '/api/admin/delete-product' && req.method === 'POST') {
+            if (auth.r !== 'admin') return sendJson(res, 403, { success: false, error: 'Admin only' });
+            const body = await parseBody(req);
+
+            const id = String(body.id || '').trim();
+            if (!id) return sendJson(res, 400, { success: false, error: 'Product id is required' });
+
+            try {
+                const result = await withLock(async () => {
+                    const product = getProduct(id);
+                    if (!product) return { error: 'Product not found', code: 404 };
+                    const stock = memoryDb.stock[id] || { cases: 0, pieces: 0 };
+                    const total = stock.cases * product.piecesPerCase + stock.pieces;
+                    if (total > 0) {
+                        return { error: `Cannot delete ${product.name} ${product.volume}: it still has ${stock.cases} cases and ${stock.pieces} pieces in stock — clear the stock first`, code: 400 };
+                    }
+                    const txCount = memoryDb.dispatches.filter(d => d.productId === id).length;
+                    const catalog = PRODUCT_CATALOG.filter(p => p.id !== id);
+                    writeCatalogFile(catalog);
+                    deleteImageIfUnreferenced(product.image, catalog);
+                    if (memoryDb.stock) delete memoryDb.stock[id];
+                    // memoryDb.dispatches is deliberately left untouched.
+                    reloadCatalog();
+                    addAudit(auth, 'product-removed', {
+                        targetId: id,
+                        notes: `Removed product ${product.name} ${product.volume} (${id}); ${txCount} past transaction(s) kept as Deleted Product`,
+                    });
+                    await persist();
+                    return { productId: id, transactionsKept: txCount };
+                });
+                if (result.error) return sendJson(res, result.code || 400, { success: false, error: result.error });
+                return sendJson(res, 200, { success: true, productId: result.productId, transactionsKept: result.transactionsKept });
+            } catch (e) {
+                console.error('Delete product error:', e);
+                return sendJson(res, 500, { success: false, error: 'Failed to delete product: ' + e.message });
             }
         }
 

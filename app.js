@@ -62,6 +62,15 @@
         return esc(JSON.stringify(String(str == null ? '' : str)));
     }
 
+    // Product image URL. Stored values are either a bare legacy filename
+    // ("Redbull 250ml.png") or a path ("images/prod_12_ab12cd34.png").
+    // Encode each path segment so spaces become %20 but the "/" stays a
+    // slash — encodeURIComponent() on the whole string would turn it
+    // into %2F and break the URL.
+    function imageSrc(image) {
+        return String(image == null ? '' : image).split('/').map(s => encodeURIComponent(s)).join('/');
+    }
+
     function isAdmin() {
         return currentUser && currentUser.role === 'admin';
     }
@@ -143,6 +152,10 @@
         // Full data export is admin-only.
         document.getElementById('btn-export-data').style.display = isAdmin() ? 'flex' : 'none';
         document.getElementById('btn-sidebar-reports').style.display = isAdmin() ? 'flex' : 'none';
+
+        // Add Product button in Inventory is admin-only.
+        const invAddBtn = document.getElementById('inventory-btn-add-product');
+        if (invAddBtn) invAddBtn.style.display = isAdmin() ? 'flex' : 'none';
 
         // Show logout button
         document.getElementById('btn-logout').style.display = 'flex';
@@ -503,7 +516,7 @@
             return `
                 <div class="product-card" data-product-id="${p.id}" onclick="window.app.showProductModal('${p.id}')">
                     <div class="product-card-image">
-                        <img src="${encodeURIComponent(p.image)}" alt="${p.name} ${p.volume}" loading="lazy">
+                        <img src="${imageSrc(p.image)}" alt="${p.name} ${p.volume}" loading="lazy">
                     </div>
                     <div class="product-card-name" title="${p.name} ${p.volume}">${p.name} ${p.volume}</div>
                     <div class="product-card-volume">${p.piecesPerCase} pcs/case</div>
@@ -536,17 +549,25 @@
             const total = getTotalPieces(p.id);
             const status = getStockStatus(p.id);
             const badgeClass = `badge-${status}`;
+            // Admin-only Edit/Delete buttons. Staff see only Dispatch/Restock.
+            const adminActions = isAdmin() ? `
+                            <button class="btn-table btn-table-edit" onclick="window.app.openProductForm('edit', '${p.id}')">
+                                Edit
+                            </button>
+                            <button class="btn-table btn-table-delete" onclick="window.app.deleteProduct('${p.id}')">
+                                Delete
+                            </button>` : '';
             return `
                 <tr>
                     <td data-label="Product">
                         <div class="table-product">
                             <div class="table-product-img">
-                                <img src="${encodeURIComponent(p.image)}" alt="${p.name}" loading="lazy">
+                                <img src="${imageSrc(p.image)}" alt="${esc(p.name)}" loading="lazy">
                             </div>
-                            <span class="table-product-name">${p.name} ${p.volume}</span>
+                            <span class="table-product-name">${esc(p.name)} ${esc(p.volume)}</span>
                         </div>
                     </td>
-                    <td data-label="Volume">${p.volume}</td>
+                    <td data-label="Volume">${esc(p.volume)}</td>
                     <td data-label="Pcs/Case">${p.piecesPerCase}</td>
                     <td data-label="Cases"><strong>${s.cases}</strong></td>
                     <td data-label="Loose Pcs">${s.pieces}</td>
@@ -561,7 +582,7 @@
                             <button class="btn-table btn-table-restock" onclick="window.app.quickRestock('${p.id}')">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
                                 Restock
-                            </button>
+                            </button>${adminActions}
                         </div>
                     </td>
                 </tr>
@@ -623,7 +644,7 @@
             return `
                 <div class="dispatch-entry">
                     <div class="dispatch-entry-img">
-                        <img src="${encodeURIComponent(p.image)}" alt="${p.name}">
+                        <img src="${imageSrc(p.image)}" alt="${p.name}">
                     </div>
                     <div class="dispatch-entry-info">
                         <div class="dispatch-entry-name">${p.name} ${p.volume}</div>
@@ -770,7 +791,7 @@
             return `
                 <div class="dispatch-entry">
                     <div class="dispatch-entry-img">
-                        <img src="${encodeURIComponent(p.image)}" alt="${p.name}">
+                        <img src="${imageSrc(p.image)}" alt="${p.name}">
                     </div>
                     <div class="dispatch-entry-info">
                         <div class="dispatch-entry-name">${p.name} ${p.volume}</div>
@@ -824,7 +845,7 @@
             return `
                 <div class="dispatch-entry">
                     <div class="dispatch-entry-img">
-                        <img src="${encodeURIComponent(p.image)}" alt="${p.name}">
+                        <img src="${imageSrc(p.image)}" alt="${p.name}">
                     </div>
                     <div class="dispatch-entry-info">
                         <div class="dispatch-entry-name">${p.name} ${p.volume} ${typeTag}</div>
@@ -985,7 +1006,7 @@
                 <div class="retail-breakdown-item">
                     <div class="retail-breakdown-product">
                         <div class="dispatch-entry-img">
-                            <img src="${encodeURIComponent(p.image)}" alt="${p.name}">
+                            <img src="${imageSrc(p.image)}" alt="${p.name}">
                         </div>
                         <div class="retail-breakdown-product-info">
                             <span class="retail-breakdown-product-name">${p.name} ${p.volume}</span>
@@ -1076,7 +1097,7 @@
             return `
                 <div class="dispatch-entry">
                     <div class="dispatch-entry-img">
-                        <img src="${encodeURIComponent(p.image)}" alt="${p.name}">
+                        <img src="${imageSrc(p.image)}" alt="${p.name}">
                     </div>
                     <div class="dispatch-entry-info">
                         <div class="dispatch-entry-name">${p.name} ${p.volume} ${typeTag}</div>
@@ -1447,11 +1468,11 @@
         document.getElementById('modal-body').innerHTML = `
             <div class="modal-product-header">
                 <div class="modal-product-img">
-                    <img src="${encodeURIComponent(p.image)}" alt="${p.name} ${p.volume}">
+                    <img src="${imageSrc(p.image)}" alt="${esc(p.name)} ${esc(p.volume)}">
                 </div>
                 <div>
-                    <div class="modal-product-name">${p.name}</div>
-                    <div class="modal-product-volume">${p.volume} · ${p.piecesPerCase} pcs/case</div>
+                    <div class="modal-product-name">${esc(p.name)}</div>
+                    <div class="modal-product-volume">${esc(p.volume)} · ${p.piecesPerCase} pcs/case</div>
                     <span class="stock-badge ${badgeClass}" style="margin-top:6px;display:inline-block">${getStatusLabel(status)}</span>
                 </div>
             </div>
@@ -1479,6 +1500,12 @@
                     Restock
                 </button>
             </div>
+            ${isAdmin() ? `
+            <div style="display:flex;gap:10px;margin-bottom:8px;">
+                <button class="btn btn-dispatch" style="flex:1" onclick="window.app.openProductForm('edit', '${p.id}')">
+                    Edit Product
+                </button>
+            </div>` : ''}
             ${recentHtml}
         `;
 
@@ -1487,6 +1514,207 @@
 
     function closeModal() {
         document.getElementById('modal-overlay').classList.remove('active');
+    }
+
+    // ==========================================
+    // PRODUCT FORM — one shared Add / Edit modal
+    // Admin only. Add mode is blank (+ initial stock fields);
+    // Edit mode is pre-filled and has NO stock fields — stock
+    // changes only via Restock / Dispatch.
+    // ==========================================
+    // Image state for the open product form. imageData is a data URL
+    // set only when the user picks a new photo; removeImage is set
+    // only when the user taps Remove photo.
+    let productFormState = { mode: 'add', productId: null, imageData: null, imageName: null, removeImage: false };
+
+    function openProductForm(mode, productId) {
+        if (!isAdmin()) { showToast('Only administrators can add or edit products', 'error'); return; }
+        const isEdit = mode === 'edit';
+        const p = isEdit ? getProduct(productId) : null;
+        if (isEdit && (!p || !PRODUCT_CATALOG.find(x => x.id === productId))) {
+            showToast('Product not found', 'error');
+            return;
+        }
+        const stockTotal = isEdit ? getTotalPieces(productId) : 0;
+        productFormState = { mode: isEdit ? 'edit' : 'add', productId: isEdit ? productId : null, imageData: null, imageName: null, removeImage: false };
+
+        const previewSrc = isEdit && p.image ? imageSrc(p.image) : 'icon.svg';
+        const photoStatus = isEdit
+            ? (p.image ? 'Current photo — will be kept' : 'No photo — product uses the plain icon')
+            : 'No photo yet — product will use the plain icon';
+        // Pieces per case cannot be changed while stock is left (server
+        // enforces this too); say so right where the user hits it.
+        const ppcHint = (isEdit && stockTotal > 0)
+            ? '<small style="display:block;margin-top:4px;font-size:0.72rem;color:var(--text-muted);line-height:1.3;">Pieces per case can\'t be changed while stock is left — clear the stock first.</small>'
+            : '<small style="display:block;margin-top:4px;font-size:0.72rem;color:var(--text-muted);line-height:1.3;">How many pieces make up 1 case (e.g. 12)</small>';
+        const stockFields = isEdit ? '' : `
+                <div class="form-group" style="margin:0;">
+                    <label for="pf-cases">Initial Cases</label>
+                    <input type="number" id="pf-cases" class="form-control" min="0" value="0" style="margin-top:4px;">
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label for="pf-pieces">Initial Pieces</label>
+                    <input type="number" id="pf-pieces" class="form-control" min="0" value="0" style="margin-top:4px;">
+                </div>`;
+
+        document.getElementById('modal-body').innerHTML = `
+            <h3 style="font-size:1.15rem;font-weight:700;margin-bottom:16px;color:var(--text-primary);">${isEdit ? 'Edit Product' : 'Add Product'}</h3>
+            <div class="form-group" style="margin-bottom:14px;">
+                <label for="pf-name">Product Name</label>
+                <input type="text" id="pf-name" class="form-control" placeholder="e.g. Carlsberg" value="${isEdit ? esc(p.name) : ''}" style="margin-top:4px;">
+            </div>
+            <div class="form-group" style="margin-bottom:14px;">
+                <label for="pf-volume">Size</label>
+                <input type="text" id="pf-volume" class="form-control" placeholder="e.g. 650ml" value="${isEdit ? esc(p.volume) : ''}" style="margin-top:4px;">
+            </div>
+            <div class="form-group" style="margin-bottom:14px;">
+                <label for="pf-ppc">Pieces in 1 Case</label>
+                <input type="number" id="pf-ppc" class="form-control" min="1" placeholder="e.g. 12" value="${isEdit ? p.piecesPerCase : ''}" style="margin-top:4px;">
+                ${ppcHint}
+            </div>
+            ${stockFields}
+            <div class="form-group" style="margin-bottom:14px;">
+                <label>Photo</label>
+                <div class="pf-photo-row" style="margin-top:8px;">
+                    <div class="pf-photo-preview"><img id="pf-preview" src="${previewSrc}" alt="Product photo"></div>
+                    <div style="flex:1;">
+                        <p id="pf-photo-status" style="font-size:0.82rem;color:var(--text-muted);margin:0 0 10px;line-height:1.4;">${photoStatus}</p>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                            <button type="button" class="btn btn-small" onclick="window.app.productFormPickImage()">Change photo</button>
+                            ${isEdit && p.image ? '<button type="button" class="btn btn-small" onclick="window.app.productFormRemoveImage()">Remove photo</button>' : ''}
+                        </div>
+                        <small style="display:block;margin-top:8px;font-size:0.72rem;color:var(--text-muted);line-height:1.3;">JPG, PNG or WebP, under 3 MB. iPhone HEIC photos are not accepted — please save the photo as JPG first.</small>
+                    </div>
+                </div>
+                <input type="file" id="pf-image-input" accept="image/png, image/jpeg, image/webp" style="display:none;" onchange="window.app.productFormImageChanged(this)">
+            </div>
+            <div style="display:flex;gap:10px;margin-top:20px;">
+                <button type="button" class="btn btn-confirm-cancel" style="flex:1" onclick="window.app.closeModal()">Cancel</button>
+                <button type="button" class="btn btn-dispatch" id="pf-save-btn" style="flex:1" onclick="window.app.saveProductForm()">${isEdit ? 'Save Changes' : 'Add Product'}</button>
+            </div>
+        `;
+        document.getElementById('modal-overlay').classList.add('active');
+    }
+
+    function productFormPickImage() {
+        const input = document.getElementById('pf-image-input');
+        if (input) input.click();
+    }
+
+    function productFormImageChanged(input) {
+        if (!input.files || input.files.length === 0) return;
+        const file = input.files[0];
+        const ext = (file.name.split('.').pop() || '').toLowerCase();
+        const allowedExts = ['png', 'jpg', 'jpeg', 'webp'];
+        if (!allowedExts.includes(ext)) {
+            showToast('Please pick a JPG, PNG or WebP photo. iPhone HEIC photos are not accepted — please save the photo as JPG first.', 'warning');
+            input.value = '';
+            return;
+        }
+        if (file.size > 3 * 1024 * 1024) {
+            showToast('Please pick a JPG or PNG photo under 3 MB.', 'warning');
+            input.value = '';
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            productFormState.imageData = e.target.result;
+            productFormState.imageName = file.name;
+            productFormState.removeImage = false;
+            const preview = document.getElementById('pf-preview');
+            if (preview) preview.src = e.target.result;
+            const status = document.getElementById('pf-photo-status');
+            if (status) status.textContent = 'New photo selected — will be saved';
+        };
+        reader.onerror = () => showToast('Failed to read photo', 'error');
+        reader.readAsDataURL(file);
+    }
+
+    function productFormRemoveImage() {
+        productFormState.imageData = null;
+        productFormState.imageName = null;
+        productFormState.removeImage = true;
+        const preview = document.getElementById('pf-preview');
+        if (preview) preview.src = 'icon.svg';
+        const status = document.getElementById('pf-photo-status');
+        if (status) status.textContent = 'Photo will be removed — product will use the plain icon';
+        const input = document.getElementById('pf-image-input');
+        if (input) input.value = '';
+    }
+
+    async function saveProductForm() {
+        if (!isAdmin()) { showToast('Only administrators can add or edit products', 'error'); return; }
+        const name = document.getElementById('pf-name').value.trim();
+        const volume = document.getElementById('pf-volume').value.trim();
+        const piecesPerCase = parseInt(document.getElementById('pf-ppc').value, 10);
+        if (!name || !volume) { showToast('Please enter a product name and size', 'warning'); return; }
+        if (!piecesPerCase || piecesPerCase < 1) { showToast('Please enter a valid pieces per case (at least 1)', 'warning'); return; }
+
+        const isEdit = productFormState.mode === 'edit';
+        // Pieces per case cannot change while stock is left.
+        if (isEdit && piecesPerCase !== getProduct(productFormState.productId).piecesPerCase && getTotalPieces(productFormState.productId) > 0) {
+            showToast('Pieces per case can\'t be changed while stock is left — clear the stock first.', 'warning');
+            return;
+        }
+
+        const saveBtn = document.getElementById('pf-save-btn');
+        const originalHtml = saveBtn ? saveBtn.innerHTML : '';
+        if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
+
+        try {
+            let path, payload;
+            if (isEdit) {
+                // Send image only if a new photo was picked, removeImage
+                // only if Remove was chosen; otherwise omit both so the
+                // server keeps the current photo.
+                payload = { id: productFormState.productId, name, volume, piecesPerCase };
+                if (productFormState.imageData) { payload.image = productFormState.imageData; payload.imageName = productFormState.imageName; }
+                if (productFormState.removeImage) payload.removeImage = true;
+                path = '/api/admin/edit-product';
+            } else {
+                const initialCases = Math.max(0, parseInt(document.getElementById('pf-cases').value, 10) || 0);
+                const initialPieces = Math.max(0, parseInt(document.getElementById('pf-pieces').value, 10) || 0);
+                payload = { name, volume, piecesPerCase, initialCases, initialPieces };
+                if (productFormState.imageData) { payload.image = productFormState.imageData; payload.imageName = productFormState.imageName; }
+                path = '/api/admin/add-product';
+            }
+            const res = await apiFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || (isEdit ? 'Failed to save product' : 'Failed to add product'));
+            showToast(isEdit ? 'Product saved successfully! Reloading...' : 'Product added successfully! Reloading...', 'success');
+            setTimeout(() => window.location.reload(), 1200);
+        } catch (err) {
+            showToast(esc(err.message), 'error');
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
+        }
+    }
+
+    // Delete a product. Hard delete, gated on zero stock — the server
+    // enforces the same gate. Past records stay and render as
+    // "Deleted Product".
+    async function deleteProduct(productId) {
+        if (!isAdmin()) { showToast('Only administrators can delete products', 'error'); return; }
+        const p = getProduct(productId);
+        if (!PRODUCT_CATALOG.find(x => x.id === productId)) { showToast('Product not found', 'error'); return; }
+        const s = getStock(productId);
+        const total = getTotalPieces(productId);
+        if (total > 0) {
+            showToast('Clear the stock first — dispatch it or move it.', 'warning');
+            return;
+        }
+        const txnCount = state.dispatches.filter(d => d.productId === productId).length;
+        const message = `Delete ${p.name} ${p.volume}? It has ${s.cases} cases in stock and ${txnCount} past records. Past records will stay, but will show as 'Deleted Product'. This cannot be undone.`;
+        const confirmed = await showConfirm('Delete product?', esc(message));
+        if (!confirmed) return;
+        try {
+            const res = await apiFetch('/api/admin/delete-product', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: productId }) });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'Failed to delete product');
+            showToast('Product deleted successfully! Reloading...', 'success');
+            setTimeout(() => window.location.reload(), 1200);
+        } catch (err) {
+            showToast(esc(err.message), 'error');
+        }
     }
 
     // ==========================================
@@ -1524,7 +1752,7 @@
         const p = getProduct(productId);
         const s = getStock(productId);
         preview.style.display = 'flex';
-        document.getElementById('dispatch-preview-img').src = encodeURIComponent(p.image);
+        document.getElementById('dispatch-preview-img').src = imageSrc(p.image);
         document.getElementById('dispatch-preview-name').textContent = `${p.name} ${p.volume}`;
         document.getElementById('dispatch-preview-stock').textContent = `In stock: ${s.cases} cases, ${s.pieces} pieces (${getTotalPieces(productId)} total pcs)`;
     }
@@ -1537,7 +1765,7 @@
         const p = getProduct(productId);
         const s = getStock(productId);
         preview.style.display = 'flex';
-        document.getElementById('restock-preview-img').src = encodeURIComponent(p.image);
+        document.getElementById('restock-preview-img').src = imageSrc(p.image);
         document.getElementById('restock-preview-name').textContent = `${p.name} ${p.volume}`;
         document.getElementById('restock-preview-stock').textContent = `In stock: ${s.cases} cases, ${s.pieces} pieces (${getTotalPieces(productId)} total pcs)`;
     }
@@ -1550,7 +1778,7 @@
         const p = getProduct(productId);
         const s = getStock(productId);
         preview.style.display = 'flex';
-        document.getElementById('leakage-preview-img').src = encodeURIComponent(p.image);
+        document.getElementById('leakage-preview-img').src = imageSrc(p.image);
         document.getElementById('leakage-preview-name').textContent = `${p.name} ${p.volume}`;
         document.getElementById('leakage-preview-stock').textContent = `In stock: ${s.cases} cases, ${s.pieces} pieces (${getTotalPieces(productId)} total pcs)`;
     }
@@ -1563,7 +1791,7 @@
         const p = getProduct(productId);
         const s = getStock(productId);
         preview.style.display = 'flex';
-        document.getElementById('retail-takeout-preview-img').src = encodeURIComponent(p.image);
+        document.getElementById('retail-takeout-preview-img').src = imageSrc(p.image);
         document.getElementById('retail-takeout-preview-name').textContent = `${p.name} ${p.volume}`;
         document.getElementById('retail-takeout-preview-stock').textContent = `In stock: ${s.cases} cases, ${s.pieces} pieces (${getTotalPieces(productId)} total pcs)`;
     }
@@ -1576,7 +1804,7 @@
         const p = getProduct(productId);
         const s = getStock(productId);
         preview.style.display = 'flex';
-        document.getElementById('retail-return-preview-img').src = encodeURIComponent(p.image);
+        document.getElementById('retail-return-preview-img').src = imageSrc(p.image);
         document.getElementById('retail-return-preview-name').textContent = `${p.name} ${p.volume}`;
         document.getElementById('retail-return-preview-stock').textContent = `In stock: ${s.cases} cases, ${s.pieces} pieces (${getTotalPieces(productId)} total pcs)`;
     }
@@ -2063,50 +2291,19 @@
             reader.readAsDataURL(file);
         });
 
-        // Add a single product manually (type it in, no Excel needed)
+        // Add a single product manually — opens the shared Add / Edit
+        // product modal (same form as Edit, blank + initial stock fields).
+        // The old inline Admin form was removed; there is one Add flow.
         const addProductBtn = document.getElementById('admin-btn-add-product');
         if (addProductBtn) {
-            addProductBtn.addEventListener('click', async () => {
-                const name = document.getElementById('add-prod-name').value.trim();
-                const volume = document.getElementById('add-prod-volume').value.trim();
-                const piecesPerCase = parseInt(document.getElementById('add-prod-ppc').value, 10);
-                const initialCases = parseInt(document.getElementById('add-prod-cases').value, 10) || 0;
-                const initialPieces = parseInt(document.getElementById('add-prod-pieces').value, 10) || 0;
-                const imageInput = document.getElementById('add-prod-image');
+            addProductBtn.addEventListener('click', () => openProductForm('add'));
+        }
 
-                if (!name || !volume) { showToast('Please enter a product name and volume', 'warning'); return; }
-                if (!piecesPerCase || piecesPerCase < 1) { showToast('Please enter a valid pieces-per-case (at least 1)', 'warning'); return; }
-
-                const payload = { name, volume, piecesPerCase, initialCases, initialPieces };
-
-                const send = async () => {
-                    const originalHtml = addProductBtn.innerHTML;
-                    addProductBtn.disabled = true;
-                    addProductBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;margin-right:6px;display:inline-block;vertical-align:middle;animation:spin 1s linear infinite"><circle cx="12" cy="12" r="10"/></svg> Adding...';
-                    try {
-                        const res = await apiFetch('/api/admin/add-product', { method: 'POST', body: JSON.stringify(payload) });
-                        const data = await res.json();
-                        if (!res.ok) throw new Error(data.error || 'Failed to add product');
-                        showToast('Product added successfully! Reloading...', 'success');
-                        setTimeout(() => window.location.reload(), 1200);
-                    } catch (err) {
-                        showToast(err.message, 'error');
-                        addProductBtn.disabled = false;
-                        addProductBtn.innerHTML = originalHtml;
-                    }
-                };
-
-                if (imageInput.files && imageInput.files.length > 0) {
-                    const file = imageInput.files[0];
-                    if (file.size > 3 * 1024 * 1024) { showToast('Image is too large (max 3MB). Use a smaller file or add it later.', 'warning'); return; }
-                    const reader = new FileReader();
-                    reader.onload = (e) => { payload.image = e.target.result; payload.imageName = file.name; send(); };
-                    reader.onerror = () => showToast('Failed to read image file', 'error');
-                    reader.readAsDataURL(file);
-                } else {
-                    send();
-                }
-            });
+        // Add Product button in the Inventory header (admin-only, shown
+        // by updateUIForUser).
+        const invAddBtn = document.getElementById('inventory-btn-add-product');
+        if (invAddBtn) {
+            invAddBtn.addEventListener('click', () => openProductForm('add'));
         }
 
         // Sidebar Report modal triggers
@@ -2219,7 +2416,13 @@
         openChangePwDialog,
         removeUser,
         undoTransaction,
-        downloadExcel
+        downloadExcel,
+        openProductForm,
+        saveProductForm,
+        productFormPickImage,
+        productFormImageChanged,
+        productFormRemoveImage,
+        deleteProduct
     };
 
     // Boot

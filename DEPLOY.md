@@ -17,6 +17,19 @@ The app was hardened before deploying:
 
 ---
 
+## Catalog edits and Render
+
+Catalog edits and uploaded product photos live on the server disk, not in MongoDB — and on free Render that disk is wiped on redeploy/restart. So an edit you make in the app is lost on the next redeploy unless you save it to GitHub first.
+
+Plainly:
+- **What survives a redeploy:** stock, transactions and users — those live in MongoDB Atlas.
+- **What does NOT survive a redeploy yet:** catalog edits (the `data.js` file) and uploaded product photos (the `images/` folder).
+- **What to do:** keep the original product photos, and after any catalog change (add, edit or delete a product), commit `data.js` and `images/` to GitHub so the next deploy picks them up. The database move that fixes this properly is Phase 2 and is not done yet — this is not fixed, it is a limit to work around for now.
+
+One more warning: importing a catalog from Excel regenerates the whole catalog and can overwrite products you added, edited or deleted by hand in the app. Confirm before you import.
+
+---
+
 ## Step 1 — Put the code on GitHub
 
 If it isn't already:
@@ -105,4 +118,6 @@ To test with MongoDB locally, copy `.env.example` to `.env` and fill in `MONGODB
 - **Build fails / app won't start:** confirm Start Command is `npm start` and Node version is 18+.
 - **"Not authorized" right after deploy:** you changed `SESSION_SECRET` after logging in — just log in again.
 - **Data didn't persist after redeploy:** `MONGODB_URI` isn't set, so it used the temporary disk. Add the env var.
+- **Catalog edits / product photos gone after redeploy:** that's expected on free Render — `data.js` and `images/` live on the server disk, which is wiped. Commit them to GitHub after any catalog change (see "Catalog edits and Render" above).
+- **Excel import wiped my manual product edits:** importing regenerates the whole catalog from the spreadsheet. It can overwrite products added, edited or deleted by hand. Re-add them, and confirm before importing next time.
 - **Can't connect to Mongo:** check Network Access allows `0.0.0.0/0` and the `<password>` in the URI is correct.
