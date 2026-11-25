@@ -524,6 +524,12 @@
                         <span class="stock-count">${s.cases}c ${s.pieces}p</span>
                         <span class="stock-badge ${badgeClass}">${getStatusLabel(stockStatus)}</span>
                     </div>
+                    ${isAdmin() ? `
+                    <div class="product-card-actions">
+                        <button class="btn-table btn-table-delete product-card-delete" onclick="event.stopPropagation(); window.app.deleteProduct('${p.id}')">
+                            Delete
+                        </button>
+                    </div>` : ''}
                 </div>
             `;
         }).join('');
@@ -1504,6 +1510,9 @@
             <div style="display:flex;gap:10px;margin-bottom:8px;">
                 <button class="btn btn-dispatch" style="flex:1" onclick="window.app.openProductForm('edit', '${p.id}')">
                     Edit Product
+                </button>
+                <button class="btn btn-delete" style="flex:1" onclick="window.app.deleteProduct('${p.id}')">
+                    Delete Product
                 </button>
             </div>` : ''}
             ${recentHtml}

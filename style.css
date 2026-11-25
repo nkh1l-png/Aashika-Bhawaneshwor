@@ -565,6 +565,17 @@ input, select, textarea { font-family: inherit; }
     gap: 8px;
 }
 
+.product-card-actions {
+    display: flex;
+    margin-top: 10px;
+}
+
+.product-card-delete {
+    flex: 1;
+    justify-content: center;
+    cursor: pointer;
+}
+
 .stock-count {
     font-size: 1.05rem;
     font-weight: 700;
@@ -753,6 +764,16 @@ input, select, textarea { font-family: inherit; }
     border: 1px solid rgba(239, 68, 68, 0.2);
 }
 .btn-table-delete:hover {
+    background: rgba(239, 68, 68, 0.25);
+    box-shadow: 0 0 12px var(--accent-danger-glow);
+}
+
+.btn-delete {
+    background: rgba(239, 68, 68, 0.12);
+    color: var(--accent-danger);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+.btn-delete:hover {
     background: rgba(239, 68, 68, 0.25);
     box-shadow: 0 0 12px var(--accent-danger-glow);
 }
